@@ -114,3 +114,13 @@ See the individual `setup.md` for full details.
 - [Architecture](documentation/architecture.md) — Concepts, data flow, and design decisions
 - [Enable Pantheon](documentation/enable_pantheon.md) — How to use or add an orchestrator
 - [GitHub Action Example](documentation/github_action_example.md) — Copy-paste workflow examples
+
+---
+
+## Contributing
+
+We welcome contributions. Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community standards. To report a security issue, see [SECURITY.md](SECURITY.md).
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE).
