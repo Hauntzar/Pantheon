@@ -1,0 +1,124 @@
+name: "Dobbi / bug_bot — Bug Triage & Resolution Agent"
+
+on:
+  workflow_call:
+    inputs:
+      slack_message:
+        description: "The triggering Slack message content"
+        required: true
+        type: string
+      channel:
+        description: "Slack channel ID"
+        required: true
+        type: string
+      thread_ts:
+        description: "Slack thread timestamp for threaded replies"
+        required: false
+        type: string
+        default: ""
+      dry_run:
+        description: "Run all checks but do not post fixes or comments"
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      github_token:
+        description: "GitHub token with repo read/write"
+        required: true
+      openai_api_key:
+        description: "OpenAI API key for Codex agent"
+        required: true
+      slack_token:
+        description: "Slack Bot token"
+        required: true
+      sentry_token:
+        description: "Sentry API authentication token"
+        required: true
+      jira_token:
+        description: "Jira/Atlassian API token"
+        required: true
+      jira_email:
+        description: "Atlassian account email"
+        required: true
+      jira_site_url:
+        description: "Atlassian site URL (e.g. https://your-company.atlassian.net)"
+        required: true
+    outputs:
+      jira_ticket:
+        description: "Jira ticket key created"
+        value: ${{ jobs.orchestrate.outputs.jira_ticket }}
+      pr_url:
+        description: "Pull request URL (if fix was implemented)"
+        value: ${{ jobs.orchestrate.outputs.pr_url }}
+      severity:
+        description: "Critical | High | Medium | Low"
+        value: ${{ jobs.orchestrate.outputs.severity }}
+      status:
+        description: "fixed | documented | escalated"
+        value: ${{ jobs.orchestrate.outputs.status }}
+
+jobs:
+  orchestrate:
+    name: "bug_bot"
+    runs-on: ubuntu-latest
+
+    outputs:
+      jira_ticket: ${{ steps.run_orchestrator.outputs.jira_ticket }}
+      pr_url: ${{ steps.run_orchestrator.outputs.pr_url }}
+      severity: ${{ steps.run_orchestrator.outputs.severity }}
+      status: ${{ steps.run_orchestrator.outputs.status }}
+
+    steps:
+      - name: Check out agentic-pantheon
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ format('{0}/agentic-pantheon', github.repository_owner) }}
+          ref: main
+          path: .pantheon
+          token: ${{ secrets.github_token }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install MCP server packages
+        run: |
+          npm install -g \
+            @modelcontextprotocol/server-github \
+            @modelcontextprotocol/server-filesystem \
+            @modelcontextprotocol/server-shell \
+            @anthropic/mcp-server-slack \
+            @sentry/mcp-server \
+            @anthropic/mcp-server-atlassian
+
+      - name: Run bug_bot
+        id: run_orchestrator
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.openai_api_key }}
+          prompt: |
+            Read and follow your instructions at .pantheon/Pantheon/Dobbi/bug_bot/agent.md
+
+            Triage the following Sentry alert from Slack:
+            Message: ${{ inputs.slack_message }}
+            Channel: ${{ inputs.channel }}
+            Thread: ${{ inputs.thread_ts }}
+            Dry run: ${{ inputs.dry_run }}
+          safety-strategy: drop-sudo
+          sandbox: workspace-write
+        env:
+          GITHUB_TOKEN: ${{ secrets.github_token }}
+          SLACK_BOT_TOKEN: ${{ secrets.slack_token }}
+          SENTRY_TOKEN: ${{ secrets.sentry_token }}
+          JIRA_TOKEN: ${{ secrets.jira_token }}
+          JIRA_EMAIL: ${{ secrets.jira_email }}
+          JIRA_SITE_URL: ${{ secrets.jira_site_url }}
+
+      - name: Upload bug_bot findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bug_bot-findings-${{ github.run_id }}
+          path: .pantheon-output/
+          retention-days: 14

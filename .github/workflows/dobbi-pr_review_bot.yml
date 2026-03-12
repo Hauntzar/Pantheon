@@ -1,0 +1,97 @@
+name: "Dobbi / pr_review_bot — PR Review Agent"
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: "Owner/repo slug (e.g. your-org/your-repo)"
+        required: true
+        type: string
+      pr_number:
+        description: "Pull request number to review"
+        required: true
+        type: number
+      pantheon_repo:
+        description: "Pantheon repository slug"
+        required: false
+        type: string
+        default: ""
+      dry_run:
+        description: "Run all checks but do not post the review comment"
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      github_token:
+        description: "GitHub token with pull-requests: write"
+        required: true
+      openai_api_key:
+        description: "OpenAI API key for Codex agent"
+        required: true
+    outputs:
+      review_status:
+        description: "approved | changes_requested | commented"
+        value: ${{ jobs.orchestrate.outputs.review_status }}
+      blocking_count:
+        description: "Number of blocking issues found"
+        value: ${{ jobs.orchestrate.outputs.blocking_count }}
+
+jobs:
+  orchestrate:
+    name: "pr_review_bot"
+    runs-on: ubuntu-latest
+
+    outputs:
+      review_status: ${{ steps.run_orchestrator.outputs.review_status }}
+      blocking_count: ${{ steps.run_orchestrator.outputs.blocking_count }}
+
+    steps:
+      - name: Check out calling repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo }}
+          token: ${{ secrets.github_token }}
+          fetch-depth: 0
+
+      - name: Check out agentic-pantheon
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.pantheon_repo || format('{0}/agentic-pantheon', github.repository_owner) }}
+          ref: main
+          path: .pantheon
+          token: ${{ secrets.github_token }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install MCP server packages
+        run: |
+          npm install -g \
+            @modelcontextprotocol/server-github \
+            @modelcontextprotocol/server-filesystem \
+            @modelcontextprotocol/server-shell
+
+      - name: Run pr_review_bot
+        id: run_orchestrator
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.openai_api_key }}
+          prompt: |
+            Read and follow your instructions at .pantheon/Pantheon/Dobbi/pr_review_bot/agent.md
+
+            Review PR #${{ inputs.pr_number }} in ${{ inputs.repo }}.
+            Dry run: ${{ inputs.dry_run }}
+          safety-strategy: drop-sudo
+          sandbox: workspace-write
+        env:
+          GITHUB_TOKEN: ${{ secrets.github_token }}
+
+      - name: Upload review findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr_review_bot-findings-${{ inputs.pr_number }}
+          path: .pantheon-output/
+          retention-days: 14

@@ -1,0 +1,113 @@
+name: "Dobbi / pr_developer_bot — PR Comment Resolution Agent"
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: "Owner/repo slug (e.g. your-org/your-repo)"
+        required: true
+        type: string
+      pr_number:
+        description: "Pull request number"
+        required: true
+        type: number
+      comment_id:
+        description: "ID of the review comment that triggered this run"
+        required: true
+        type: number
+      pantheon_repo:
+        description: "Pantheon repository slug"
+        required: false
+        type: string
+        default: ""
+      dry_run:
+        description: "Run analysis but do not push fixes or post comments"
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      github_token:
+        description: "GitHub token with repo read/write and pull-requests: write"
+        required: true
+      openai_api_key:
+        description: "OpenAI API key for Codex agent"
+        required: true
+      slack_token:
+        description: "Slack Bot token (for escalation messages)"
+        required: true
+    outputs:
+      auto_fixed:
+        description: "Count of comments auto-fixed"
+        value: ${{ jobs.orchestrate.outputs.auto_fixed }}
+      verified_fixed:
+        description: "Count of comments fixed with Karen verification"
+        value: ${{ jobs.orchestrate.outputs.verified_fixed }}
+      escalated:
+        description: "Count of comments escalated"
+        value: ${{ jobs.orchestrate.outputs.escalated }}
+      status:
+        description: "all_resolved | partially_resolved | escalated"
+        value: ${{ jobs.orchestrate.outputs.status }}
+
+jobs:
+  orchestrate:
+    name: "pr_developer_bot"
+    runs-on: ubuntu-latest
+
+    outputs:
+      auto_fixed: ${{ steps.run_orchestrator.outputs.auto_fixed }}
+      verified_fixed: ${{ steps.run_orchestrator.outputs.verified_fixed }}
+      escalated: ${{ steps.run_orchestrator.outputs.escalated }}
+      status: ${{ steps.run_orchestrator.outputs.status }}
+
+    steps:
+      - name: Check out calling repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo }}
+          token: ${{ secrets.github_token }}
+          fetch-depth: 0
+
+      - name: Check out agentic-pantheon
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.pantheon_repo || format('{0}/agentic-pantheon', github.repository_owner) }}
+          ref: main
+          path: .pantheon
+          token: ${{ secrets.github_token }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install MCP server packages
+        run: |
+          npm install -g \
+            @modelcontextprotocol/server-github \
+            @modelcontextprotocol/server-filesystem \
+            @anthropic/mcp-server-slack
+
+      - name: Run pr_developer_bot
+        id: run_orchestrator
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.openai_api_key }}
+          prompt: |
+            Read and follow your instructions at .pantheon/Pantheon/Dobbi/pr_developer_bot/agent.md
+
+            Resolve review comment #${{ inputs.comment_id }} on PR #${{ inputs.pr_number }} in ${{ inputs.repo }}.
+            Dry run: ${{ inputs.dry_run }}
+          safety-strategy: drop-sudo
+          sandbox: workspace-write
+        env:
+          GITHUB_TOKEN: ${{ secrets.github_token }}
+          SLACK_BOT_TOKEN: ${{ secrets.slack_token }}
+
+      - name: Upload pr_developer_bot findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr_developer_bot-findings-pr${{ inputs.pr_number }}-${{ inputs.comment_id }}
+          path: .pantheon-output/
+          retention-days: 14

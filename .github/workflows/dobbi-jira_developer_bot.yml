@@ -1,0 +1,123 @@
+name: "Dobbi / jira_developer_bot — Jira Story Implementation Agent"
+
+on:
+  workflow_call:
+    inputs:
+      pantheon_repo:
+        description: "Pantheon repository slug"
+        required: false
+        type: string
+        default: ""
+      ticket_key:
+        description: "Jira ticket key (e.g. PORTAL-123)"
+        required: true
+        type: string
+      channel:
+        description: "Slack channel ID (if triggered via Slack)"
+        required: false
+        type: string
+        default: ""
+      thread_ts:
+        description: "Slack thread timestamp for threaded replies"
+        required: false
+        type: string
+        default: ""
+      dry_run:
+        description: "Run analysis but do not create branches, PRs, or update Jira"
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      github_token:
+        description: "GitHub token with repo read/write"
+        required: true
+      openai_api_key:
+        description: "OpenAI API key for Codex agent"
+        required: true
+      jira_token:
+        description: "Jira/Atlassian API token"
+        required: true
+      jira_email:
+        description: "Atlassian account email"
+        required: true
+      jira_site_url:
+        description: "Atlassian site URL (e.g. https://your-company.atlassian.net)"
+        required: true
+      slack_token:
+        description: "Slack Bot token"
+        required: true
+    outputs:
+      pr_url:
+        description: "Pull request URL"
+        value: ${{ jobs.orchestrate.outputs.pr_url }}
+      ticket_key:
+        description: "Jira ticket key"
+        value: ${{ jobs.orchestrate.outputs.ticket_key }}
+      risk_level:
+        description: "Low | Medium | High (escalated)"
+        value: ${{ jobs.orchestrate.outputs.risk_level }}
+      status:
+        description: "implemented | escalated | blocked"
+        value: ${{ jobs.orchestrate.outputs.status }}
+
+jobs:
+  orchestrate:
+    name: "jira_developer_bot"
+    runs-on: ubuntu-latest
+
+    outputs:
+      pr_url: ${{ steps.run_orchestrator.outputs.pr_url }}
+      ticket_key: ${{ steps.run_orchestrator.outputs.ticket_key }}
+      risk_level: ${{ steps.run_orchestrator.outputs.risk_level }}
+      status: ${{ steps.run_orchestrator.outputs.status }}
+
+    steps:
+      - name: Check out agentic-pantheon
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.pantheon_repo || format('{0}/agentic-pantheon', github.repository_owner) }}
+          ref: main
+          path: .pantheon
+          token: ${{ secrets.github_token }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install MCP server packages
+        run: |
+          npm install -g \
+            @modelcontextprotocol/server-github \
+            @modelcontextprotocol/server-filesystem \
+            @anthropic/mcp-server-atlassian \
+            @anthropic/mcp-server-slack
+
+      - name: Run jira_developer_bot
+        id: run_orchestrator
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.openai_api_key }}
+          prompt: |
+            Read and follow your instructions at .pantheon/Pantheon/Dobbi/jira_developer_bot/agent.md
+
+            Implement Jira story: ${{ inputs.ticket_key }}
+            Slack channel: ${{ inputs.channel }}
+            Slack thread: ${{ inputs.thread_ts }}
+            Dry run: ${{ inputs.dry_run }}
+          safety-strategy: drop-sudo
+          sandbox: workspace-write
+        env:
+          GITHUB_TOKEN: ${{ secrets.github_token }}
+          JIRA_TOKEN: ${{ secrets.jira_token }}
+          JIRA_EMAIL: ${{ secrets.jira_email }}
+          JIRA_SITE_URL: ${{ secrets.jira_site_url }}
+          SLACK_BOT_TOKEN: ${{ secrets.slack_token }}
+
+      - name: Upload jira_developer_bot findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jira_developer_bot-findings-${{ inputs.ticket_key }}
+          path: .pantheon-output/
+          retention-days: 14
