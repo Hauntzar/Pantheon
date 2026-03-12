@@ -17,6 +17,8 @@ Thank you for your interest in contributing to Agentic Pantheon. This document p
 
 ### Pull Requests
 
+All changes to `main` must go through a pull request. PRs require approval from a repository maintainer before they can be merged.
+
 1. **Fork the repository** and create a branch from `main`
 2. **Make your changes** — keep them focused and well-scoped
 3. **Follow existing conventions** — match the style of agent instructions, workflows, and documentation

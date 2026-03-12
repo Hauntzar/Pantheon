@@ -1,7 +1,8 @@
 # Agentic Pantheon
 
 Bobby's Agentic Pantheon — a centralised library of AI **orchestrators** that
-can be called from GitHub Actions workflows in any repository.
+can be called from GitHub Actions workflows in any repository. This is a
+**template** to be copied and extended with your own orchestrators.
 
 Each orchestrator is an AI agent that coordinates a sequence of tasks across
 multiple toolings and MCP (Model Context Protocol) provisions to accomplish a
@@ -11,7 +12,8 @@ defined goal.
 
 ## Quick Start
 
-Add this workflow to any repository to enable the `Dobbi/pr_review_bot` orchestrator:
+1. **Copy this repository** to your organization (e.g. `your-org/agentic-pantheon`).
+2. **Add this workflow** to any repository to enable the `Dobbi/pr_review_bot` orchestrator:
 
 ```yaml
 # .github/workflows/pantheon-pr-review.yml
@@ -31,7 +33,7 @@ jobs:
       github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-See [`documentation/github_action_example.md`](documentation/github_action_example.md)
+Replace `your-org` with your organization or username. See [`documentation/github_action_example.md`](documentation/github_action_example.md)
 for full examples and
 [`documentation/enable_pantheon.md`](documentation/enable_pantheon.md)
 for setup instructions.
